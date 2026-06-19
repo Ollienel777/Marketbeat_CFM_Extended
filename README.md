@@ -44,42 +44,43 @@ process. On Windows, register a weekly job with:
 ```
 
 By default each scheduled run does two things, in order: (1) recompute the portfolio via
-`raam` and record it to `raam_history.db`, then (2) sync the Alpaca paper account to that
+`raam` and record it to `raam_history.db`, then (2) sync the IBKR paper account to that
 new target via `raam-trade --execute` -- so the paper account rebalances automatically
 every week with no manual step. Pass `-SyncPaperAccount:$false` to only recompute/record
 and skip the trading step.
 
-The trade-sync step needs `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` saved as **persistent** User
-environment variables (a Scheduled Task runs in its own session and won't see keys only set
-with `$env:VAR = ...` in your terminal):
+The trade-sync step requires TWS or IB Gateway to already be running and logged into your
+paper account (see below) at the scheduled time -- it's a desktop app, not a cloud API, so
+it won't start itself. Output from both steps is appended to `logs\raam_run.log` after every
+run -- check it if a scheduled trade sync doesn't show up in your IBKR account. Re-run
+`register_schedule.ps1` (e.g. to change the day/time or toggle `-SyncPaperAccount`) and it
+updates the existing task instead of duplicating it.
 
-```powershell
-[Environment]::SetEnvironmentVariable("ALPACA_API_KEY", "<key>", "User")
-[Environment]::SetEnvironmentVariable("ALPACA_SECRET_KEY", "<secret>", "User")
-```
+## Paper trading (Interactive Brokers)
 
-Output from both steps is appended to `logs\raam_run.log` after every run -- check it if a
-scheduled trade sync doesn't show up in your Alpaca account. Re-run `register_schedule.ps1`
-(e.g. to change the day/time or toggle `-SyncPaperAccount`) and it updates the existing task
-instead of duplicating it.
-
-## Paper trading (Alpaca)
-
-`raam-trade` syncs an Alpaca paper-trading account to a recorded run's target portfolio.
-Alpaca's paper trading only supports US-listed equities, so non-US-equity picks (Canadian
-`.TO` tickers, futures like `GC=F`, crypto pairs like `BTC-USD`) are reported separately
-and skipped, not traded.
+`raam-trade` syncs an IBKR paper-trading account to a recorded run's target portfolio.
+**Alpaca was tried first but doesn't support Canadian residents** (even for paper trading),
+so this uses Interactive Brokers instead, which does. Only US-listed equities are routed
+through this; non-US-equity picks (Canadian `.TO` tickers, futures like `GC=F`, crypto pairs
+like `BTC-USD`) are reported separately and skipped, not traded.
 
 ```bash
 pip install -e ".[broker]"
 ```
 
-Set your Alpaca **paper-trading** API keys (not live keys) as environment variables:
+Unlike a pure cloud API, IBKR's API connects to a local desktop app:
 
-```bash
-export ALPACA_API_KEY=...
-export ALPACA_SECRET_KEY=...
-```
+1. Open an IBKR account and install **Trader Workstation (TWS)** or the lighter **IB
+   Gateway**.
+2. Log into TWS/IB Gateway with your **paper-trading** credentials (paper account IDs start
+   with `D`; `get_trading_client()` refuses to trade if it doesn't see one, as a safety
+   check against accidentally hitting a live account).
+3. Enable API access: File/Configure > Settings > API > Enable ActiveX and Socket Clients.
+4. Note the socket port shown there -- TWS paper trading defaults to `7497`, IB Gateway
+   paper trading defaults to `4002`.
+
+Connection settings can be overridden via env vars if needed: `IBKR_HOST` (default
+`127.0.0.1`), `IBKR_PORT` (default `7497`), `IBKR_CLIENT_ID` (default `1`).
 
 ```bash
 raam-trade                  # dry run against the latest recorded run -- shows orders, submits nothing
@@ -87,9 +88,9 @@ raam-trade --run-id 3       # dry run against a specific run
 raam-trade --execute        # actually places the buy/sell orders on the paper account
 ```
 
-It diffs the target portfolio's share counts against your current Alpaca paper positions
-and only submits the delta (so re-running it after a partial fill or a new weekly run just
-trues up the account rather than re-buying everything from scratch).
+It diffs the target portfolio's share counts against your current IBKR paper positions and
+only submits the delta (so re-running it after a partial fill or a new weekly run just trues
+up the account rather than re-buying everything from scratch).
 
 ## Dashboard
 
@@ -119,7 +120,7 @@ pytest
 - `src/raam/cli.py` — `raam` command-line entrypoint.
 - `src/raam/history.py` — SQLite persistence for past runs and their positions.
 - `src/raam/history_cli.py` — `raam-history` command-line entrypoint.
-- `src/raam/broker.py` — Alpaca paper-trading client, tradability rules, rebalance math.
+- `src/raam/broker.py` — IBKR paper-trading client, tradability rules, rebalance math.
 - `src/raam/trade_cli.py` — `raam-trade` command-line entrypoint.
 - `src/raam/dashboard_data.py` — pure helper functions for the dashboard (sector weights, factor stats, weight drift).
 - `src/raam/dashboard.py` — the Streamlit app.
