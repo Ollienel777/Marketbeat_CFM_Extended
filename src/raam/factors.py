@@ -37,8 +37,11 @@ def compute_atr(highs: pd.DataFrame, lows: pd.DataFrame, closes: pd.DataFrame, w
 
 
 def compute_trend_signal(closes: pd.DataFrame, atr: pd.Series, high_window: int, low_window: int) -> pd.Series:
-    rolling_high = closes.rolling(high_window).max().iloc[-1]
-    rolling_low = closes.rolling(low_window).min().iloc[-1]
+    # shift(1) excludes today's own close from the rolling window, so today's
+    # price is compared against the *prior* range rather than a window that
+    # always contains itself (which would make a breakout impossible to detect).
+    rolling_high = closes.shift(1).rolling(high_window).max().iloc[-1]
+    rolling_low = closes.shift(1).rolling(low_window).min().iloc[-1]
     cur = closes.iloc[-1]
 
     upper = rolling_high + atr

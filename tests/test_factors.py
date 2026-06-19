@@ -57,13 +57,24 @@ def test_compute_atr_nonnegative(prices):
     assert (atr >= 0).all()
 
 
-def test_compute_trend_signal_is_neutral_for_monotonic_series(prices):
-    # NOTE: compute_trend_signal compares today's close to a rolling high/low
-    # that includes today itself, so today's price can never exceed its own
-    # rolling high (or fall below its own rolling low) -- the "confirmed
-    # uptrend"/"confirmed downtrend" signal can structurally never fire. This
-    # mirrors a latent bug carried over from the original notebook; it's a
-    # known issue (only 5% of the score weight) rather than intended behavior.
+def test_compute_trend_signal_flags_breakout_and_breakdown(prices):
+    # A sharp final move should register as a breakout/breakdown relative to
+    # the *prior* rolling range (today's close is excluded from that range).
+    breakout_prices = prices.copy()
+    breakout_prices.iloc[-1, breakout_prices.columns.get_loc("UP")] *= 1.10
+    breakout_prices.iloc[-1, breakout_prices.columns.get_loc("DOWN")] *= 0.90
+
+    highs = breakout_prices * 1.01
+    lows = breakout_prices * 0.99
+    atr = compute_atr(highs, lows, breakout_prices, window=42)
+    trend = compute_trend_signal(breakout_prices, atr, high_window=63, low_window=105)
+
+    assert trend["UP"] == 1
+    assert trend["DOWN"] == -1
+    assert trend["FLAT"] == 0
+
+
+def test_compute_trend_signal_is_neutral_without_a_breakout(prices):
     highs = prices * 1.01
     lows = prices * 0.99
     atr = compute_atr(highs, lows, prices, window=42)

@@ -37,8 +37,13 @@ pytest
 - `src/raam/strategy.py` — orchestrates the full pipeline, including fee-adjusted final sizing.
 - `src/raam/cli.py` — `raam` command-line entrypoint.
 
-## Known issues carried over from the original notebook
+## Bugs fixed vs. the original notebook
 
-- `compute_trend_signal` compares today's close against a rolling high/low window that
-  includes today itself, so the "confirmed uptrend/downtrend" signal can structurally
-  never fire. Low impact (5% of the final score weight) but worth fixing.
+- `select_top_stocks` sized each candidate's sector weight against the number of stocks
+  chosen *so far* instead of the target portfolio size, so the very first pick always
+  "weighed" 100% and was rejected — the 40% sector cap was never actually enforced; it
+  silently fell back to picking the top-N stocks by score every run. Fixed by weighting
+  candidates against `max_stocks`.
+- `compute_trend_signal` compared today's close against a rolling high/low window that
+  included today itself, so the breakout/breakdown signal could structurally never fire.
+  Fixed with `shift(1)` so the comparison is against the prior range.
