@@ -56,7 +56,9 @@ st.caption(
     "Run `raam-trade` from a terminal to diff against your real Alpaca paper account; "
     "this dashboard never submits orders."
 )
-tradable, non_tradable = split_tradable(positions.rename(columns={"ticker": "Ticker", "shares": "Shares"}))
+tradable, non_tradable = split_tradable(
+    positions.rename(columns={"ticker": "Ticker", "shares": "Shares", "weight": "Weight"})
+)
 orders = compute_rebalance_orders(tradable, current_positions={})
 if orders:
     st.dataframe(
