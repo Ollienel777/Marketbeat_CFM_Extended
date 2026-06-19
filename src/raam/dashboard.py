@@ -53,7 +53,7 @@ if not scored_universe.empty:
 st.subheader("Rebalance preview (vs. an empty/zero account — dry run only)")
 st.caption(
     "Shows what `raam-trade` would buy/sell to build this portfolio from scratch. "
-    "Run `raam-trade` from a terminal to diff against your real Alpaca paper account; "
+    "Run `raam-trade` from a terminal to diff against your real IBKR paper account; "
     "this dashboard never submits orders."
 )
 tradable, non_tradable = split_tradable(
@@ -66,7 +66,7 @@ if orders:
         use_container_width=True,
     )
 if not non_tradable.empty:
-    st.caption("Not tradable via Alpaca (Canadian/.TO, futures, crypto, or cash):")
+    st.caption("Not tradable via IBKR US-equity routing (Canadian/.TO, futures, crypto, or cash):")
     st.dataframe(non_tradable[["Ticker", "Weight"]], use_container_width=True)
 
 st.subheader("Ticker weight history")

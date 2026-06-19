@@ -4,9 +4,10 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-# Tickers matching these patterns aren't tradable as US equities via Alpaca:
-# Canadian/other exchange suffixes (e.g. RY.TO, AIM.V), futures (GC=F), and
-# crypto pairs (BTC-USD). CASH is our own sentinel row, not a broker symbol.
+# Tickers matching these patterns aren't tradable as US equities via IBKR's
+# US stock routing: Canadian/other exchange suffixes (e.g. RY.TO, AIM.V),
+# futures (GC=F), and crypto pairs (BTC-USD). CASH is our own sentinel row,
+# not a broker symbol.
 _NON_TRADABLE_PATTERNS = [
     re.compile(r"\.[A-Z]+$"),   # exchange suffix, e.g. .TO, .V, .NE, .NS
     re.compile(r"=F$"),         # futures, e.g. GC=F
@@ -58,34 +59,63 @@ def compute_rebalance_orders(target_portfolio: pd.DataFrame, current_positions: 
 
 
 def get_trading_client():
-    """Builds an Alpaca paper-trading client from ALPACA_API_KEY / ALPACA_SECRET_KEY env vars."""
-    from alpaca.trading.client import TradingClient
+    """Connects to a locally running IBKR TWS or IB Gateway, in paper-trading mode.
 
-    api_key = os.environ.get("ALPACA_API_KEY")
-    secret_key = os.environ.get("ALPACA_SECRET_KEY")
-    if not api_key or not secret_key:
+    Requires TWS or IB Gateway to be running and logged into a *paper* account, with
+    API access enabled (File/Configure > Settings > API > Enable ActiveX and Socket
+    Clients). Connection details can be overridden via env vars:
+      IBKR_HOST (default 127.0.0.1)
+      IBKR_PORT (default 7497, TWS paper-trading port; IB Gateway paper is 4002)
+      IBKR_CLIENT_ID (default 1)
+    """
+    from ib_async import IB
+
+    host = os.environ.get("IBKR_HOST", "127.0.0.1")
+    port = int(os.environ.get("IBKR_PORT", "7497"))
+    client_id = int(os.environ.get("IBKR_CLIENT_ID", "1"))
+
+    ib = IB()
+    try:
+        ib.connect(host, port, clientId=client_id, readonly=False)
+    except Exception as exc:
         raise RuntimeError(
-            "Set ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables "
-            "(use your Alpaca paper-trading keys, not live keys)."
+            f"Could not connect to IBKR at {host}:{port} (client id {client_id}). "
+            "Make sure TWS or IB Gateway is running, logged into your PAPER account, "
+            "and has API access enabled (Configure > API > Settings)."
+        ) from exc
+
+    if not ib.isConnected():
+        raise RuntimeError(f"Connected but IBKR session at {host}:{port} is not active.")
+
+    accounts = ib.managedAccounts()
+    if accounts and not any(acct.startswith("D") for acct in accounts):
+        # IBKR paper accounts conventionally start with "D"; live accounts don't.
+        raise RuntimeError(
+            f"Connected IBKR account(s) {accounts} don't look like a paper account "
+            "(paper account IDs start with 'D'). Refusing to trade -- reconnect to "
+            "your paper-trading TWS/Gateway session instead."
         )
 
-    return TradingClient(api_key, secret_key, paper=True)
+    return ib
 
 
 def get_current_positions(client) -> dict[str, float]:
-    positions = client.get_all_positions()
-    return {p.symbol: float(p.qty) for p in positions}
+    from ib_async import Stock
+
+    positions = client.positions()
+    return {
+        p.contract.symbol: float(p.position)
+        for p in positions
+        if isinstance(p.contract, Stock)
+    }
 
 
 def submit_orders(client, orders: list[RebalanceOrder]) -> None:
-    from alpaca.trading.enums import OrderSide, TimeInForce
-    from alpaca.trading.requests import MarketOrderRequest
+    from ib_async import MarketOrder, Stock
 
     for order in orders:
-        request = MarketOrderRequest(
-            symbol=order.ticker,
-            qty=order.qty,
-            side=OrderSide.BUY if order.side == "buy" else OrderSide.SELL,
-            time_in_force=TimeInForce.DAY,
-        )
-        client.submit_order(request)
+        contract = Stock(order.ticker, "SMART", "USD")
+        client.qualifyContracts(contract)
+
+        ib_order = MarketOrder(order.side.upper(), order.qty)
+        client.placeOrder(contract, ib_order)
