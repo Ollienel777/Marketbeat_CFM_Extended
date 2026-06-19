@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from raam.history import get_run_positions, get_ticker_history, list_runs, record_run
+from raam.history import get_run_positions, get_run_scored_universe, get_ticker_history, list_runs, record_run
 
 
 @pytest.fixture
@@ -75,3 +75,34 @@ def test_get_ticker_history_empty_for_unknown_ticker(db_path, sample_portfolio):
         universe_size=37, portfolio=sample_portfolio,
     )
     assert get_ticker_history(db_path, "ZZZZ").empty
+
+
+def test_record_run_persists_scored_universe(db_path, sample_portfolio):
+    meta_scored = pd.DataFrame([
+        {"Ticker": "AAPL", "Sector": "Technology", "Momentum": 0.12, "Volatility": 0.02,
+         "AvgCorr": 0.3, "Trend": 0, "Score": 1.5},
+        {"Ticker": "KO", "Sector": "Consumer Defensive", "Momentum": 0.05, "Volatility": 0.01,
+         "AvgCorr": 0.2, "Trend": 0, "Score": 2.5},
+        {"Ticker": "XOM", "Sector": "Energy", "Momentum": -0.03, "Volatility": 0.03,
+         "AvgCorr": 0.1, "Trend": -1, "Score": 5.0},
+    ])
+
+    run_id = record_run(
+        db_path=db_path, run_at="2026-06-19T10:00:00", tickers_path="tickers.csv",
+        start_date="2024-10-01", end_date="2025-11-21", budget_cad=1_000_000,
+        universe_size=3, portfolio=sample_portfolio, meta_scored=meta_scored,
+    )
+
+    universe = get_run_scored_universe(db_path, run_id)
+    assert len(universe) == 3
+    assert set(universe["ticker"]) == {"AAPL", "KO", "XOM"}
+    assert universe.iloc[0]["ticker"] == "AAPL"  # ordered by score ascending
+
+
+def test_record_run_without_meta_scored_leaves_universe_empty(db_path, sample_portfolio):
+    run_id = record_run(
+        db_path=db_path, run_at="2026-06-19T10:00:00", tickers_path="tickers.csv",
+        start_date="2024-10-01", end_date="2025-11-21", budget_cad=1_000_000,
+        universe_size=2, portfolio=sample_portfolio,
+    )
+    assert get_run_scored_universe(db_path, run_id).empty

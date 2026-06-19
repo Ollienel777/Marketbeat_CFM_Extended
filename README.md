@@ -75,6 +75,18 @@ It diffs the target portfolio's share counts against your current Alpaca paper p
 and only submits the delta (so re-running it after a partial fill or a new weekly run just
 trues up the account rather than re-buying everything from scratch).
 
+## Dashboard
+
+A read-only Streamlit dashboard over the history DB: run picker, portfolio table, sector
+allocation chart, risk/return scatter (selected vs. screened universe), a rebalance preview,
+and per-ticker weight history across runs. It never submits trades — that stays in
+`raam-trade`, run deliberately from a terminal.
+
+```bash
+pip install -e ".[dashboard]"
+raam-dashboard
+```
+
 ## Test
 
 ```bash
@@ -93,6 +105,9 @@ pytest
 - `src/raam/history_cli.py` — `raam-history` command-line entrypoint.
 - `src/raam/broker.py` — Alpaca paper-trading client, tradability rules, rebalance math.
 - `src/raam/trade_cli.py` — `raam-trade` command-line entrypoint.
+- `src/raam/dashboard_data.py` — pure helper functions for the dashboard (sector weights, factor stats, weight drift).
+- `src/raam/dashboard.py` — the Streamlit app.
+- `src/raam/dashboard_cli.py` — `raam-dashboard` command-line entrypoint.
 - `scripts/register_schedule.ps1` — registers a weekly Windows Task Scheduler job.
 
 ## Bugs fixed vs. the original notebook

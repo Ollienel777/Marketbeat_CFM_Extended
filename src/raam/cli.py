@@ -56,6 +56,7 @@ def main(argv=None) -> int:
             budget_cad=cfg.initial_budget_cad,
             universe_size=len(meta_scored),
             portfolio=portfolio,
+            meta_scored=meta_scored,
         )
         print(f"Recorded run #{run_id} to {args.history_db}")
 
