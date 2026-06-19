@@ -58,6 +58,23 @@ def compute_rebalance_orders(target_portfolio: pd.DataFrame, current_positions: 
     return orders
 
 
+def round_to_whole_shares(orders: list[RebalanceOrder]) -> list[RebalanceOrder]:
+    """Floors each order's qty to a whole share count, dropping orders that round to 0.
+
+    IBKR's API rejects fractional-share market orders (error 10243: "Fractional-sized
+    order cannot be placed via API"), even though the target portfolio's share counts
+    are fractional (sized from dollar weights). Whole-share rounding means the account
+    will track the target weights approximately, not exactly.
+    """
+    rounded = []
+    for order in orders:
+        whole_qty = float(int(order.qty))  # floor towards zero; qty is always >= 0 here
+        if whole_qty < 1:
+            continue
+        rounded.append(RebalanceOrder(ticker=order.ticker, side=order.side, qty=whole_qty))
+    return rounded
+
+
 def get_trading_client():
     """Connects to a locally running IBKR TWS or IB Gateway, in paper-trading mode.
 

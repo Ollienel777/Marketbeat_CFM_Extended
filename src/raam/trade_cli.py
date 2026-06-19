@@ -1,7 +1,14 @@
 import argparse
 import sys
 
-from raam.broker import compute_rebalance_orders, get_current_positions, get_trading_client, split_tradable, submit_orders
+from raam.broker import (
+    compute_rebalance_orders,
+    get_current_positions,
+    get_trading_client,
+    round_to_whole_shares,
+    split_tradable,
+    submit_orders,
+)
 from raam.history import DEFAULT_DB_PATH, get_run_positions, list_runs
 
 
@@ -61,20 +68,27 @@ def main(argv=None) -> int:
         current_positions = get_current_positions(client)
         orders = compute_rebalance_orders(tradable, current_positions)
 
-        if not orders:
-            print(f"Run #{run_id}: account already matches the target portfolio. No orders needed.")
+        # IBKR's API rejects fractional-share orders, so what we display must match
+        # what we'd actually submit -- round before printing, not just before submitting.
+        whole_orders = round_to_whole_shares(orders)
+        skipped = len(orders) - len(whole_orders)
+
+        if not whole_orders:
+            print(f"Run #{run_id}: account already matches the target portfolio (within a whole share). No orders needed.")
             return 0
 
-        print(f"Run #{run_id}: {len(orders)} order(s) to sync the paper account to the target portfolio:")
-        for order in orders:
-            print(f"  {order.side.upper():4s} {order.qty:>12.4f}  {order.ticker}")
+        print(f"Run #{run_id}: {len(whole_orders)} whole-share order(s) to sync the paper account to the target portfolio:")
+        for order in whole_orders:
+            print(f"  {order.side.upper():4s} {order.qty:>12.0f}  {order.ticker}")
+        if skipped:
+            print(f"  ({skipped} order(s) rounded down to 0 shares and were skipped -- target weight was too small relative to price)")
 
         if not args.execute:
             print("\nDry run only -- no orders submitted. Pass --execute to place them.")
             return 0
 
-        submit_orders(client, orders)
-        print(f"\nSubmitted {len(orders)} order(s) to IBKR paper trading.")
+        submit_orders(client, whole_orders)
+        print(f"\nSubmitted {len(whole_orders)} order(s) to IBKR paper trading.")
         return 0
     finally:
         client.disconnect()

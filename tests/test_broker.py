@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from raam.broker import compute_rebalance_orders, is_tradable, split_tradable
+from raam.broker import RebalanceOrder, compute_rebalance_orders, is_tradable, round_to_whole_shares, split_tradable
 
 
 @pytest.mark.parametrize("ticker,expected", [
@@ -62,3 +62,22 @@ def test_compute_rebalance_orders_skips_negligible_diff():
     target = pd.DataFrame({"Ticker": ["AAPL"], "Shares": [100.0]})
     orders = compute_rebalance_orders(target, current_positions={"AAPL": 100.0000001})
     assert orders == []
+
+
+def test_round_to_whole_shares_floors_quantities():
+    orders = [RebalanceOrder("AAPL", "buy", 180.2393), RebalanceOrder("KO", "sell", 1173.1895)]
+    rounded = round_to_whole_shares(orders)
+
+    by_ticker = {o.ticker: o for o in rounded}
+    assert by_ticker["AAPL"].qty == 180.0
+    assert by_ticker["KO"].qty == 1173.0
+    assert by_ticker["AAPL"].side == "buy"
+    assert by_ticker["KO"].side == "sell"
+
+
+def test_round_to_whole_shares_drops_orders_under_one_share():
+    orders = [RebalanceOrder("AAPL", "buy", 0.6), RebalanceOrder("KO", "buy", 1.2)]
+    rounded = round_to_whole_shares(orders)
+
+    assert [o.ticker for o in rounded] == ["KO"]
+    assert rounded[0].qty == 1.0

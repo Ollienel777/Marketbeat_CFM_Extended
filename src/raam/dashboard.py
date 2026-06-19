@@ -1,6 +1,6 @@
 import streamlit as st
 
-from raam.broker import compute_rebalance_orders, split_tradable
+from raam.broker import compute_rebalance_orders, round_to_whole_shares, split_tradable
 from raam.dashboard_data import get_latest_run_id, get_run_overview
 from raam.history import DEFAULT_DB_PATH, get_ticker_history, list_runs
 
@@ -59,10 +59,11 @@ st.caption(
 tradable, non_tradable = split_tradable(
     positions.rename(columns={"ticker": "Ticker", "shares": "Shares", "weight": "Weight"})
 )
-orders = compute_rebalance_orders(tradable, current_positions={})
+orders = round_to_whole_shares(compute_rebalance_orders(tradable, current_positions={}))
 if orders:
+    st.caption("Whole shares only -- IBKR's API rejects fractional-share orders.")
     st.dataframe(
-        [{"Ticker": o.ticker, "Side": o.side, "Qty": round(o.qty, 4)} for o in orders],
+        [{"Ticker": o.ticker, "Side": o.side, "Qty": int(o.qty)} for o in orders],
         use_container_width=True,
     )
 if not non_tradable.empty:
