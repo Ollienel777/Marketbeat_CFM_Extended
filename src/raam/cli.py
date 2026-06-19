@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from raam.config import RaamConfig
+from raam.history import DEFAULT_DB_PATH, record_run
 from raam.strategy import run_raam
 
 
@@ -14,6 +15,8 @@ def _parse_args(argv):
     parser.add_argument("--end", default=date.today().isoformat(), help="Price history end date (YYYY-MM-DD).")
     parser.add_argument("--budget", type=float, default=1_000_000, help="Initial budget in CAD.")
     parser.add_argument("--out", default="results", help="Directory to write output CSVs to.")
+    parser.add_argument("--history-db", default=DEFAULT_DB_PATH, help="SQLite DB path to record this run into.")
+    parser.add_argument("--no-history", action="store_true", help="Skip recording this run to the history DB.")
     return parser.parse_args(argv)
 
 
@@ -42,6 +45,20 @@ def main(argv=None) -> int:
     print(portfolio.sort_values("Weight", ascending=False).to_string(index=False))
     print(f"\nWrote portfolio to {portfolio_path}")
     print(f"Wrote scored universe to {scored_path}")
+
+    if not args.no_history:
+        run_id = record_run(
+            db_path=args.history_db,
+            run_at=datetime.now().isoformat(timespec="seconds"),
+            tickers_path=args.tickers,
+            start_date=args.start,
+            end_date=args.end,
+            budget_cad=cfg.initial_budget_cad,
+            universe_size=len(meta_scored),
+            portfolio=portfolio,
+        )
+        print(f"Recorded run #{run_id} to {args.history_db}")
+
     return 0
 
 
