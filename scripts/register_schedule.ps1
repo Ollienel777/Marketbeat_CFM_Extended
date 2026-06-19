@@ -1,11 +1,18 @@
 # Registers a weekly Windows Task Scheduler job that runs the RAAM strategy and,
-# optionally, syncs an Alpaca paper-trading account to the new target portfolio.
+# optionally, syncs an IBKR paper-trading account to the new target portfolio.
 #
 # Usage (run from an elevated or normal PowerShell prompt):
 #   .\scripts\register_schedule.ps1 -TickersPath "Tickers_file.csv" -PythonExe "C:\path\to\python.exe"
-#   .\scripts\register_schedule.ps1 -SyncPaperAccount:$false   # raam only, no trading
+#   .\scripts\register_schedule.ps1 -SyncPaperAccount:$true   # also run raam-trade --execute each week
 #
 # Re-running this script updates the existing task instead of duplicating it.
+#
+# SyncPaperAccount defaults to $false: IBKR's API requires TWS or IB Gateway to be
+# running and logged in (it's a local desktop app, not a pure cloud API like Alpaca's),
+# and 2FA can block a fully unattended login. Until that's set up reliably on your
+# machine (auto-restart + saved login in IB Gateway, or a tool like IBC), the safer
+# default is to only recompute/record the portfolio automatically, and run
+# `raam-trade --execute` by hand whenever IB Gateway happens to be open.
 
 param(
     [string]$TaskName = "RAAM_Weekly_Run",
@@ -14,7 +21,7 @@ param(
     [string]$PythonExe = (Get-Command python).Source,
     [string]$DayOfWeek = "Monday",
     [string]$Time = "07:00",
-    [bool]$SyncPaperAccount = $true
+    [bool]$SyncPaperAccount = $false
 )
 
 $logDir = Join-Path $ProjectDir "logs"
@@ -25,18 +32,13 @@ $runCommand = "`"$PythonExe`" -m raam.cli --tickers `"$TickersPath`" --out `"res
 $commandList = @($runCommand)
 
 if ($SyncPaperAccount) {
-    $hasApiKey = [Environment]::GetEnvironmentVariable("ALPACA_API_KEY", "User")
-    $hasSecretKey = [Environment]::GetEnvironmentVariable("ALPACA_SECRET_KEY", "User")
-    if (-not $hasApiKey -or -not $hasSecretKey) {
-        Write-Warning (
-            "ALPACA_API_KEY / ALPACA_SECRET_KEY are not set as persistent User environment " +
-            "variables. A Scheduled Task runs in its own session and won't see keys set only " +
-            "with `$env:VAR = '...'` in your current terminal -- it needs them saved permanently, e.g.:`n" +
-            "  [Environment]::SetEnvironmentVariable('ALPACA_API_KEY', '<key>', 'User')`n" +
-            "  [Environment]::SetEnvironmentVariable('ALPACA_SECRET_KEY', '<secret>', 'User')`n" +
-            "Without that, the weekly trade-sync step will fail every run (check $logPath)."
-        )
-    }
+    Write-Warning (
+        "SyncPaperAccount is enabled: this scheduled task will also run " +
+        "'raam-trade --execute' automatically. That requires TWS or IB Gateway to " +
+        "already be running and logged into your PAPER account at the scheduled time " +
+        "-- it won't launch itself, and 2FA can block an unattended login even if it " +
+        "is running. If the trade step fails, check $logPath."
+    )
     $tradeCommand = "`"$PythonExe`" -m raam.trade_cli --execute"
     $commandList += $tradeCommand
 }
@@ -52,9 +54,10 @@ $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DayOfWeek -At $Time
 
 $description = if ($SyncPaperAccount) {
     "Runs the RAAM portfolio strategy weekly, records the result to raam_history.db, " +
-    "and syncs the Alpaca paper-trading account to the new target portfolio."
+    "and syncs the IBKR paper-trading account to the new target portfolio."
 } else {
-    "Runs the RAAM portfolio strategy weekly and records the result to raam_history.db."
+    "Runs the RAAM portfolio strategy weekly and records the result to raam_history.db. " +
+    "Does not place trades -- run `raam-trade --execute` manually while IB Gateway is open."
 }
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -67,9 +70,10 @@ if ($existing) {
 }
 
 if ($SyncPaperAccount) {
-    Write-Host "Each run will: (1) recompute the portfolio, (2) place Alpaca paper orders to match it."
+    Write-Host "Each run will: (1) recompute the portfolio, (2) place IBKR paper orders to match it (requires IB Gateway/TWS already running and logged in)."
 } else {
-    Write-Host "Each run will only recompute and record the portfolio -- no trades will be placed."
+    Write-Host "Each run will only recompute and record the portfolio -- no trades will be placed automatically."
+    Write-Host "Run 'raam-trade --execute' yourself whenever IB Gateway is open and you want to sync the paper account."
 }
 Write-Host "Logs will be written to $logPath"
 Write-Host "To inspect or remove the task: Get-ScheduledTask -TaskName $TaskName | Unregister-ScheduledTask"

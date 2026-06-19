@@ -43,18 +43,22 @@ process. On Windows, register a weekly job with:
 .\scripts\register_schedule.ps1 -TickersPath "Tickers_file.csv"
 ```
 
-By default each scheduled run does two things, in order: (1) recompute the portfolio via
-`raam` and record it to `raam_history.db`, then (2) sync the IBKR paper account to that
-new target via `raam-trade --execute` -- so the paper account rebalances automatically
-every week with no manual step. Pass `-SyncPaperAccount:$false` to only recompute/record
-and skip the trading step.
+By default each scheduled run only does the recompute step: `raam` rebuilds the target
+portfolio from current data and records it to `raam_history.db`. It does **not** place
+trades automatically -- pass `-SyncPaperAccount:$true` to also run `raam-trade --execute`
+each week.
 
-The trade-sync step requires TWS or IB Gateway to already be running and logged into your
-paper account (see below) at the scheduled time -- it's a desktop app, not a cloud API, so
-it won't start itself. Output from both steps is appended to `logs\raam_run.log` after every
-run -- check it if a scheduled trade sync doesn't show up in your IBKR account. Re-run
-`register_schedule.ps1` (e.g. to change the day/time or toggle `-SyncPaperAccount`) and it
-updates the existing task instead of duplicating it.
+That's off by default on purpose: IBKR's API needs TWS or IB Gateway already running and
+logged into your paper account at the scheduled time (it's a local desktop app, not a pure
+cloud API like Alpaca's), and IBKR's 2FA can block a fully unattended login even if the app
+is open. Until that's set up reliably (IB Gateway's auto-restart + saved-login settings, or
+a headless-login tool like IBC), the practical workflow is: let the scheduled task recompute
+the portfolio automatically every week, and run `raam-trade --execute` yourself whenever IB
+Gateway happens to be open.
+
+Output is appended to `logs\raam_run.log` after every run. Re-run `register_schedule.ps1`
+(e.g. to change the day/time or toggle `-SyncPaperAccount`) and it updates the existing task
+instead of duplicating it.
 
 ## Paper trading (Interactive Brokers)
 
