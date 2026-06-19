@@ -43,9 +43,25 @@ process. On Windows, register a weekly job with:
 .\scripts\register_schedule.ps1 -TickersPath "Tickers_file.csv"
 ```
 
-This runs `raam` every Monday at 07:00, logging output to `logs\raam_run.log` and appending
-to `raam_history.db`. Re-run the script (e.g. to change the day/time) and it updates the
-existing task instead of duplicating it.
+By default each scheduled run does two things, in order: (1) recompute the portfolio via
+`raam` and record it to `raam_history.db`, then (2) sync the Alpaca paper account to that
+new target via `raam-trade --execute` -- so the paper account rebalances automatically
+every week with no manual step. Pass `-SyncPaperAccount:$false` to only recompute/record
+and skip the trading step.
+
+The trade-sync step needs `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` saved as **persistent** User
+environment variables (a Scheduled Task runs in its own session and won't see keys only set
+with `$env:VAR = ...` in your terminal):
+
+```powershell
+[Environment]::SetEnvironmentVariable("ALPACA_API_KEY", "<key>", "User")
+[Environment]::SetEnvironmentVariable("ALPACA_SECRET_KEY", "<secret>", "User")
+```
+
+Output from both steps is appended to `logs\raam_run.log` after every run -- check it if a
+scheduled trade sync doesn't show up in your Alpaca account. Re-run `register_schedule.ps1`
+(e.g. to change the day/time or toggle `-SyncPaperAccount`) and it updates the existing task
+instead of duplicating it.
 
 ## Paper trading (Alpaca)
 
