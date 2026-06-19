@@ -15,11 +15,13 @@ dependencies = [
 
 [project.optional-dependencies]
 plots = ["matplotlib>=3.7"]
+broker = ["alpaca-py>=0.33"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
 raam = "raam.cli:main"
 raam-history = "raam.history_cli:main"
+raam-trade = "raam.trade_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

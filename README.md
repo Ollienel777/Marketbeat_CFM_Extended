@@ -47,6 +47,34 @@ This runs `raam` every Monday at 07:00, logging output to `logs\raam_run.log` an
 to `raam_history.db`. Re-run the script (e.g. to change the day/time) and it updates the
 existing task instead of duplicating it.
 
+## Paper trading (Alpaca)
+
+`raam-trade` syncs an Alpaca paper-trading account to a recorded run's target portfolio.
+Alpaca's paper trading only supports US-listed equities, so non-US-equity picks (Canadian
+`.TO` tickers, futures like `GC=F`, crypto pairs like `BTC-USD`) are reported separately
+and skipped, not traded.
+
+```bash
+pip install -e ".[broker]"
+```
+
+Set your Alpaca **paper-trading** API keys (not live keys) as environment variables:
+
+```bash
+export ALPACA_API_KEY=...
+export ALPACA_SECRET_KEY=...
+```
+
+```bash
+raam-trade                  # dry run against the latest recorded run -- shows orders, submits nothing
+raam-trade --run-id 3       # dry run against a specific run
+raam-trade --execute        # actually places the buy/sell orders on the paper account
+```
+
+It diffs the target portfolio's share counts against your current Alpaca paper positions
+and only submits the delta (so re-running it after a partial fill or a new weekly run just
+trues up the account rather than re-buying everything from scratch).
+
 ## Test
 
 ```bash
@@ -63,6 +91,8 @@ pytest
 - `src/raam/cli.py` — `raam` command-line entrypoint.
 - `src/raam/history.py` — SQLite persistence for past runs and their positions.
 - `src/raam/history_cli.py` — `raam-history` command-line entrypoint.
+- `src/raam/broker.py` — Alpaca paper-trading client, tradability rules, rebalance math.
+- `src/raam/trade_cli.py` — `raam-trade` command-line entrypoint.
 - `scripts/register_schedule.ps1` — registers a weekly Windows Task Scheduler job.
 
 ## Bugs fixed vs. the original notebook
