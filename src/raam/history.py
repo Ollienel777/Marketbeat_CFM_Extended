@@ -50,6 +50,38 @@ CREATE TABLE IF NOT EXISTS account_snapshots (
     unrealized_pnl REAL,
     realized_pnl REAL
 );
+
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    backtest_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at TEXT NOT NULL,
+    label TEXT,
+    tickers_path TEXT,
+    start_date TEXT,
+    end_date TEXT,
+    budget_cad REAL,
+    freq TEXT,
+    benchmark_ticker TEXT,
+    total_fees_cad REAL,
+    strategy_total_return REAL,
+    strategy_cagr REAL,
+    strategy_vol REAL,
+    strategy_sharpe REAL,
+    strategy_max_drawdown REAL,
+    strategy_pct_positive_months REAL,
+    benchmark_total_return REAL,
+    benchmark_cagr REAL,
+    benchmark_vol REAL,
+    benchmark_sharpe REAL,
+    benchmark_max_drawdown REAL,
+    benchmark_pct_positive_months REAL
+);
+
+CREATE TABLE IF NOT EXISTS backtest_equity_curve (
+    backtest_id INTEGER NOT NULL REFERENCES backtest_runs(backtest_id),
+    date TEXT NOT NULL,
+    strategy_value REAL,
+    benchmark_value REAL
+);
 """
 
 
@@ -171,6 +203,76 @@ def record_account_snapshot(
 def list_account_snapshots(db_path: str) -> pd.DataFrame:
     with _connect(db_path) as conn:
         return pd.read_sql_query("SELECT * FROM account_snapshots ORDER BY snapshot_id", conn)
+
+
+def record_backtest_run(
+    db_path: str,
+    run_at: str,
+    label: str | None,
+    tickers_path: str,
+    start_date: str,
+    end_date: str,
+    budget_cad: float,
+    freq: str,
+    benchmark_ticker: str,
+    total_fees_cad: float,
+    strategy_metrics: dict,
+    benchmark_metrics: dict,
+    equity_curve: pd.Series,
+    benchmark_curve: pd.Series,
+) -> int:
+    """Persists one backtest's parameters, summary metrics, and daily equity curve
+    (strategy vs. benchmark), so different parameter/code versions can be compared
+    later. Returns the backtest_id."""
+
+    def _m(metrics: dict, key: str):
+        return metrics.get(key) if metrics else None
+
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO backtest_runs (run_at, label, tickers_path, start_date, end_date, budget_cad, "
+            "freq, benchmark_ticker, total_fees_cad, strategy_total_return, strategy_cagr, strategy_vol, "
+            "strategy_sharpe, strategy_max_drawdown, strategy_pct_positive_months, benchmark_total_return, "
+            "benchmark_cagr, benchmark_vol, benchmark_sharpe, benchmark_max_drawdown, benchmark_pct_positive_months) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_at, label, tickers_path, start_date, end_date, budget_cad, freq, benchmark_ticker, total_fees_cad,
+                _m(strategy_metrics, "total_return"), _m(strategy_metrics, "cagr"), _m(strategy_metrics, "annualized_vol"),
+                _m(strategy_metrics, "sharpe"), _m(strategy_metrics, "max_drawdown"), _m(strategy_metrics, "pct_positive_months"),
+                _m(benchmark_metrics, "total_return"), _m(benchmark_metrics, "cagr"), _m(benchmark_metrics, "annualized_vol"),
+                _m(benchmark_metrics, "sharpe"), _m(benchmark_metrics, "max_drawdown"), _m(benchmark_metrics, "pct_positive_months"),
+            ),
+        )
+        backtest_id = cur.lastrowid
+
+        benchmark_aligned = benchmark_curve.reindex(equity_curve.index, method="ffill") if not benchmark_curve.empty else None
+        rows = [
+            (
+                backtest_id,
+                date.isoformat() if hasattr(date, "isoformat") else str(date),
+                float(value),
+                float(benchmark_aligned.loc[date]) if benchmark_aligned is not None and date in benchmark_aligned.index else None,
+            )
+            for date, value in equity_curve.items()
+        ]
+        conn.executemany(
+            "INSERT INTO backtest_equity_curve (backtest_id, date, strategy_value, benchmark_value) VALUES (?, ?, ?, ?)",
+            rows,
+        )
+
+    return backtest_id
+
+
+def list_backtest_runs(db_path: str) -> pd.DataFrame:
+    with _connect(db_path) as conn:
+        return pd.read_sql_query("SELECT * FROM backtest_runs ORDER BY backtest_id", conn)
+
+
+def get_backtest_equity_curve(db_path: str, backtest_id: int) -> pd.DataFrame:
+    with _connect(db_path) as conn:
+        return pd.read_sql_query(
+            "SELECT * FROM backtest_equity_curve WHERE backtest_id = ? ORDER BY date", conn, params=(backtest_id,)
+        )
 
 
 def get_ticker_history(db_path: str, ticker: str) -> pd.DataFrame:

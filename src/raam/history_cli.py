@@ -1,7 +1,14 @@
 import argparse
 import sys
 
-from raam.history import DEFAULT_DB_PATH, get_run_positions, get_ticker_history, list_account_snapshots, list_runs
+from raam.history import (
+    DEFAULT_DB_PATH,
+    get_run_positions,
+    get_ticker_history,
+    list_account_snapshots,
+    list_backtest_runs,
+    list_runs,
+)
 
 
 def _parse_args(argv):
@@ -18,6 +25,8 @@ def _parse_args(argv):
     ticker.add_argument("symbol")
 
     sub.add_parser("pnl", help="Show the IBKR paper account's equity/P&L over time (from raam-trade snapshots).")
+
+    sub.add_parser("backtests", help="List all recorded backtest runs, for comparing across versions.")
 
     return parser.parse_args(argv)
 
@@ -62,6 +71,14 @@ def main(argv=None) -> int:
             change = first_nl.iloc[-1] - first_nl.iloc[0]
             pct = (change / first_nl.iloc[0]) * 100 if first_nl.iloc[0] else 0.0
             print(f"\nNet change since first snapshot: ${change:,.2f} ({pct:+.2f}%)")
+        return 0
+
+    if args.command == "backtests":
+        backtests = list_backtest_runs(args.db)
+        if backtests.empty:
+            print("No backtests recorded yet. Run `raam-backtest`.", file=sys.stderr)
+            return 1
+        print(backtests.to_string(index=False))
         return 0
 
     return 1

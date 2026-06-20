@@ -2,12 +2,15 @@ import pandas as pd
 import pytest
 
 from raam.history import (
+    get_backtest_equity_curve,
     get_run_positions,
     get_run_scored_universe,
     get_ticker_history,
     list_account_snapshots,
+    list_backtest_runs,
     list_runs,
     record_account_snapshot,
+    record_backtest_run,
     record_run,
 )
 
@@ -148,3 +151,72 @@ def test_list_account_snapshots_orders_chronologically(db_path):
 
 def test_list_account_snapshots_empty_db(db_path):
     assert list_account_snapshots(db_path).empty
+
+
+@pytest.fixture
+def sample_equity_curve():
+    idx = pd.bdate_range("2024-01-02", periods=5)
+    return pd.Series([100_000.0, 101_000.0, 99_500.0, 102_000.0, 103_000.0], index=idx)
+
+
+@pytest.fixture
+def sample_benchmark_curve():
+    idx = pd.bdate_range("2024-01-02", periods=5)
+    return pd.Series([100_000.0, 100_500.0, 101_000.0, 101_500.0, 102_000.0], index=idx)
+
+
+def test_record_backtest_run_persists_metrics_and_curve(db_path, sample_equity_curve, sample_benchmark_curve):
+    backtest_id = record_backtest_run(
+        db_path=db_path, run_at="2026-06-20T10:00:00", label="v1-baseline",
+        tickers_path="tickers.csv", start_date="2024-01-01", end_date="2024-01-08",
+        budget_cad=100_000, freq="ME", benchmark_ticker="SPY", total_fees_cad=12.50,
+        strategy_metrics={"total_return": 0.03, "cagr": 0.5, "annualized_vol": 0.1, "sharpe": 1.2, "max_drawdown": -0.015, "pct_positive_months": 1.0},
+        benchmark_metrics={"total_return": 0.02, "cagr": 0.4, "annualized_vol": 0.08, "sharpe": 1.1, "max_drawdown": -0.005, "pct_positive_months": 1.0},
+        equity_curve=sample_equity_curve, benchmark_curve=sample_benchmark_curve,
+    )
+
+    backtests = list_backtest_runs(db_path)
+    assert len(backtests) == 1
+    assert backtests.iloc[0]["backtest_id"] == backtest_id
+    assert backtests.iloc[0]["label"] == "v1-baseline"
+    assert backtests.iloc[0]["strategy_cagr"] == 0.5
+
+    curve = get_backtest_equity_curve(db_path, backtest_id)
+    assert len(curve) == 5
+    assert curve.iloc[0]["strategy_value"] == 100_000.0
+    assert curve.iloc[-1]["benchmark_value"] == 102_000.0
+
+
+def test_record_backtest_run_accumulates_across_versions(db_path, sample_equity_curve, sample_benchmark_curve):
+    for label in ["v1-baseline", "v2-ewma-vol"]:
+        record_backtest_run(
+            db_path=db_path, run_at="2026-06-20T10:00:00", label=label,
+            tickers_path="tickers.csv", start_date="2024-01-01", end_date="2024-01-08",
+            budget_cad=100_000, freq="ME", benchmark_ticker="SPY", total_fees_cad=10.0,
+            strategy_metrics={"total_return": 0.03, "cagr": 0.5, "annualized_vol": 0.1, "sharpe": 1.2, "max_drawdown": -0.01, "pct_positive_months": 1.0},
+            benchmark_metrics={}, equity_curve=sample_equity_curve, benchmark_curve=pd.Series(dtype=float),
+        )
+
+    backtests = list_backtest_runs(db_path)
+    assert list(backtests["label"]) == ["v1-baseline", "v2-ewma-vol"]
+
+
+def test_record_backtest_run_handles_empty_benchmark(db_path, sample_equity_curve):
+    backtest_id = record_backtest_run(
+        db_path=db_path, run_at="2026-06-20T10:00:00", label=None,
+        tickers_path="tickers.csv", start_date="2024-01-01", end_date="2024-01-08",
+        budget_cad=100_000, freq="ME", benchmark_ticker="SPY", total_fees_cad=0.0,
+        strategy_metrics={"total_return": 0.03, "cagr": 0.5, "annualized_vol": 0.1, "sharpe": 1.2, "max_drawdown": -0.01, "pct_positive_months": 1.0},
+        benchmark_metrics={}, equity_curve=sample_equity_curve, benchmark_curve=pd.Series(dtype=float),
+    )
+
+    curve = get_backtest_equity_curve(db_path, backtest_id)
+    assert curve["benchmark_value"].isna().all()
+
+
+def test_list_backtest_runs_empty_db(db_path):
+    assert list_backtest_runs(db_path).empty
+
+
+def test_get_backtest_equity_curve_unknown_id(db_path):
+    assert get_backtest_equity_curve(db_path, 999).empty

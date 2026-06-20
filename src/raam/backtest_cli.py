@@ -1,9 +1,11 @@
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from raam.backtest import compute_metrics, get_benchmark_equity_curve, run_backtest
 from raam.config import RaamConfig
+from raam.history import DEFAULT_DB_PATH, record_backtest_run
 
 
 def _parse_args(argv):
@@ -15,6 +17,9 @@ def _parse_args(argv):
     parser.add_argument("--freq", default="ME", help="Rebalance frequency (pandas resample alias, e.g. ME=monthly, W=weekly).")
     parser.add_argument("--benchmark", default="SPY", help="Buy-and-hold benchmark ticker to compare against.")
     parser.add_argument("--out", default="backtest_results", help="Directory to write the equity curve CSV to.")
+    parser.add_argument("--label", default=None, help="Tag this run (e.g. 'v1-baseline', 'v2-ewma-vol') for later comparison.")
+    parser.add_argument("--db", default=DEFAULT_DB_PATH, help="SQLite history DB path to record this backtest into.")
+    parser.add_argument("--no-record", action="store_true", help="Skip recording this backtest to the history DB.")
     return parser.parse_args(argv)
 
 
@@ -48,6 +53,7 @@ def main(argv=None) -> int:
     _print_metrics("Strategy ", strategy_metrics)
 
     benchmark_curve = get_benchmark_equity_curve(args.benchmark, args.start, args.end, args.budget)
+    benchmark_metrics = {}
     if not benchmark_curve.empty:
         benchmark_metrics = compute_metrics(benchmark_curve)
         _print_metrics(f"{args.benchmark} (buy & hold)", benchmark_metrics)
@@ -63,6 +69,26 @@ def main(argv=None) -> int:
         out_df[f"{args.benchmark}_cad"] = benchmark_curve.reindex(out_df.index, method="ffill")
     out_df.to_csv(curve_path)
     print(f"Wrote equity curve to {curve_path}")
+
+    if not args.no_record:
+        backtest_id = record_backtest_run(
+            db_path=args.db,
+            run_at=datetime.now().isoformat(timespec="seconds"),
+            label=args.label,
+            tickers_path=args.tickers,
+            start_date=args.start,
+            end_date=args.end,
+            budget_cad=args.budget,
+            freq=args.freq,
+            benchmark_ticker=args.benchmark,
+            total_fees_cad=total_fees,
+            strategy_metrics=strategy_metrics,
+            benchmark_metrics=benchmark_metrics,
+            equity_curve=equity_curve,
+            benchmark_curve=benchmark_curve,
+        )
+        label_note = f" (label: {args.label})" if args.label else ""
+        print(f"Recorded backtest #{backtest_id}{label_note} to {args.db}")
 
     return 0
 
