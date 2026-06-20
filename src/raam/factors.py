@@ -15,8 +15,21 @@ def compute_momentum(prices: pd.DataFrame, lookback: int) -> pd.Series:
     return recent / past - 1.0
 
 
-def compute_volatility(returns: pd.DataFrame, window: int) -> pd.Series:
-    return returns.tail(window).std(axis=0)
+def compute_volatility(returns: pd.DataFrame, window: int, decay: float = 0.94, smooth_window: int = 10) -> pd.Series:
+    """RiskMetrics-style EWMA volatility, further smoothed over `smooth_window` days.
+
+    A flat rolling std weights every day in the window equally, so a volatility spike
+    from the start of the window counts as much as yesterday's and then vanishes
+    entirely once it rolls out -- it's blind to volatility clustering. EWMA instead
+    decays older observations exponentially (lambda=decay), reacting faster to regime
+    shifts and aging out smoothly rather than in a step. `window*3` history is given to
+    the EWMA so it has time to converge before the value we actually report.
+    """
+    tail = returns.tail(window * 3)
+    ewma_var = tail.ewm(alpha=1 - decay, adjust=False).var()
+    ewma_vol = ewma_var.pow(0.5)
+    smoothed = ewma_vol.rolling(smooth_window).mean()
+    return smoothed.iloc[-1]
 
 
 def compute_avg_correlation(returns: pd.DataFrame, window: int) -> pd.Series:
@@ -68,7 +81,7 @@ def score_calc(meta: pd.DataFrame, prices: pd.DataFrame, highs: pd.DataFrame, lo
 
     try:
         M = compute_momentum(close_sub, cfg.mom_lookback)
-        V = compute_volatility(returns, cfg.vol_window)
+        V = compute_volatility(returns, cfg.vol_window, cfg.vol_decay, cfg.vol_smooth_window)
         C = compute_avg_correlation(returns, cfg.corr_window)
         ATR = compute_atr(high_sub, low_sub, close_sub, cfg.atr_window)
         T = compute_trend_signal(close_sub, ATR, cfg.trend_high_window, cfg.trend_low_window)

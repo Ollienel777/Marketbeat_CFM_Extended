@@ -4,6 +4,27 @@ import yfinance as yf
 
 from raam.config import RaamConfig
 
+# yfinance doesn't return a meaningful "sector" for ETFs (it comes back None/"Unknown"),
+# which would lump every non-equity holding into one sector-cap bucket regardless of
+# asset class. These overrides give each diversifying asset class its own bucket, the
+# same way individual stock sectors get their own 40% cap -- so the strategy can
+# actually rotate into bonds/commodities/real estate without that allocation being
+# capped by however many other "Unknown"-sector tickers happen to be in the universe.
+KNOWN_ASSET_CLASS_OVERRIDES = {
+    "AGG": "Fixed Income",
+    "IGOV": "Fixed Income",
+    "TIP": "Fixed Income",
+    "DBC": "Commodities",
+    "VNQ": "Real Estate",
+    "EFA": "International Equities",
+    "EEM": "International Equities",
+}
+
+
+def resolve_sector(ticker: str, info_sector: str) -> str:
+    """Applies the known asset-class override for ETFs lacking a real yfinance sector."""
+    return KNOWN_ASSET_CLASS_OVERRIDES.get(ticker.upper(), info_sector)
+
 
 def load_ticker_list(path: str) -> list[str]:
     df = pd.read_csv(path)
@@ -50,7 +71,7 @@ def download_all_data(tickers: list[str], start: str, end: str):
         except Exception:
             info = {}
 
-        sector = info.get("sector", "Unknown") or "Unknown"
+        sector = resolve_sector(t, info.get("sector", "Unknown") or "Unknown")
         currency = info.get("currency", "USD") or "USD"
         mcap = info.get("marketCap", np.nan)
         country = info.get("country", None)
@@ -78,7 +99,14 @@ def filter_universe(meta: pd.DataFrame, close: pd.DataFrame, vol: pd.DataFrame, 
     if meta.empty:
         return meta
 
-    meta = meta[meta["Country"].isin(["US", "CA"])].copy()
+    # Currency (not Country) is the right filter here: it's reliably "USD"/"CAD" from
+    # yfinance, whereas Country is the company's legal domicile (e.g. ACN reports
+    # "Ireland" despite being a normal USD-denominated NYSE stock) and only ever came
+    # back as the literal strings "US"/"CA" for tickers where yfinance returned no
+    # country at all and our own fallback assigned one -- meaning this filter never
+    # actually matched a real stock and was silently bypassed by the empty-result
+    # fallback in compute_portfolio every time.
+    meta = meta[meta["Currency"].isin(["USD", "CAD"])].copy()
 
     avg_vol = vol.mean()
     liquid = avg_vol[avg_vol >= cfg.min_liq_avg_volume].index

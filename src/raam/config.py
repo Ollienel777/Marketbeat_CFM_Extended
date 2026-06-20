@@ -20,6 +20,12 @@ class RaamConfig:
     trend_high_window: int = 63
     trend_low_window: int = 105
 
+    # EWMA volatility model (RiskMetrics-style). lambda=0.94 is the standard RiskMetrics
+    # daily decay factor; vol_smooth_window further smooths the EWMA series, matching the
+    # "10-day smoothed variant" described in the source paper this strategy is based on.
+    vol_decay: float = 0.94
+    vol_smooth_window: int = 10
+
     # sharpe optimization
     sharpe_lookback: int = 126
     sharpe_trials: int = 30_000

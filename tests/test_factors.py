@@ -43,6 +43,28 @@ def test_compute_volatility_is_higher_for_noisy_series(prices):
     assert vol["FLAT"] > vol["DOWN"]
 
 
+def test_compute_volatility_weights_recent_observations_more_than_old_ones():
+    # Two return series with the *same* values, just reordered: one had a volatile
+    # patch early (now calm), the other had a volatile patch recently. A flat rolling
+    # std treats both identically (order doesn't matter to it) -- EWMA should not,
+    # since it's specifically meant to react to recent volatility shifts.
+    n = 15
+    idx = pd.date_range("2024-01-01", periods=2 * n, freq="B")
+    high_vol = np.tile([0.05, -0.05], n // 2 + 1)[:n]
+    low_vol = np.tile([0.005, -0.005], n // 2 + 1)[:n]
+
+    recent_calm = pd.DataFrame({"X": np.concatenate([high_vol, low_vol])}, index=idx)
+    recent_volatile = pd.DataFrame({"X": np.concatenate([low_vol, high_vol])}, index=idx)
+
+    flat_std_calm = recent_calm.tail(2 * n).std()
+    flat_std_volatile = recent_volatile.tail(2 * n).std()
+    assert flat_std_calm["X"] == pytest.approx(flat_std_volatile["X"])  # order-blind, as expected
+
+    ewma_calm = compute_volatility(recent_calm, window=n, smooth_window=1)
+    ewma_volatile = compute_volatility(recent_volatile, window=n, smooth_window=1)
+    assert ewma_volatile["X"] > ewma_calm["X"]  # EWMA correctly weights the recent spike more
+
+
 def test_compute_avg_correlation_shape(prices):
     returns = compute_daily_returns(prices)
     corr = compute_avg_correlation(returns, window=63)
