@@ -1,7 +1,15 @@
 import pandas as pd
 import pytest
 
-from raam.history import get_run_positions, get_run_scored_universe, get_ticker_history, list_runs, record_run
+from raam.history import (
+    get_run_positions,
+    get_run_scored_universe,
+    get_ticker_history,
+    list_account_snapshots,
+    list_runs,
+    record_account_snapshot,
+    record_run,
+)
 
 
 @pytest.fixture
@@ -106,3 +114,37 @@ def test_record_run_without_meta_scored_leaves_universe_empty(db_path, sample_po
         universe_size=2, portfolio=sample_portfolio,
     )
     assert get_run_scored_universe(db_path, run_id).empty
+
+
+def test_record_account_snapshot_round_trips(db_path):
+    snapshot_id = record_account_snapshot(
+        db_path=db_path, snapshot_at="2026-06-19T10:00:00", account_id="DU12345",
+        net_liquidation=1_005_000.0, cash_balance=200_000.0, gross_position_value=805_000.0,
+        unrealized_pnl=5_000.0, realized_pnl=0.0,
+    )
+
+    snapshots = list_account_snapshots(db_path)
+    assert len(snapshots) == 1
+    assert snapshots.iloc[0]["snapshot_id"] == snapshot_id
+    assert snapshots.iloc[0]["account_id"] == "DU12345"
+    assert snapshots.iloc[0]["net_liquidation"] == 1_005_000.0
+
+
+def test_list_account_snapshots_orders_chronologically(db_path):
+    record_account_snapshot(
+        db_path=db_path, snapshot_at="2026-06-19T10:00:00", account_id="DU12345",
+        net_liquidation=1_000_000.0, cash_balance=1_000_000.0, gross_position_value=0.0,
+        unrealized_pnl=0.0, realized_pnl=0.0,
+    )
+    record_account_snapshot(
+        db_path=db_path, snapshot_at="2026-06-26T10:00:00", account_id="DU12345",
+        net_liquidation=1_010_000.0, cash_balance=200_000.0, gross_position_value=810_000.0,
+        unrealized_pnl=10_000.0, realized_pnl=0.0,
+    )
+
+    snapshots = list_account_snapshots(db_path)
+    assert list(snapshots["net_liquidation"]) == [1_000_000.0, 1_010_000.0]
+
+
+def test_list_account_snapshots_empty_db(db_path):
+    assert list_account_snapshots(db_path).empty

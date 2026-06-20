@@ -94,14 +94,30 @@ raam-trade --execute        # actually places the buy/sell orders on the paper a
 
 It diffs the target portfolio's share counts against your current IBKR paper positions and
 only submits the delta (so re-running it after a partial fill or a new weekly run just trues
-up the account rather than re-buying everything from scratch).
+up the account rather than re-buying everything from scratch). IBKR's API also rejects
+fractional-share orders, so target share counts are rounded down to whole shares before
+they're shown or submitted (an order that rounds to 0 shares is skipped, not sent as a
+zero-quantity order).
+
+## Tracking P&L
+
+Every time `raam-trade` connects, it snapshots your real IBKR paper account's net
+liquidation value, cash, and unrealized/realized P&L into `raam_history.db` (pass
+`--no-snapshot` to skip this). This is the actual account's equity, not a theoretical
+mark-to-market of the strategy's picks, so it reflects real fills and price moves.
+
+```bash
+raam-history pnl     # prints every recorded snapshot, plus net change since the first one
+```
+
+The dashboard also charts this as an equity curve (see below).
 
 ## Dashboard
 
 A read-only Streamlit dashboard over the history DB: run picker, portfolio table, sector
 allocation chart, risk/return scatter (selected vs. screened universe), a rebalance preview,
-and per-ticker weight history across runs. It never submits trades — that stays in
-`raam-trade`, run deliberately from a terminal.
+an account equity/P&L curve, and per-ticker weight history across runs. It never submits
+trades — that stays in `raam-trade`, run deliberately from a terminal.
 
 ```bash
 pip install -e ".[dashboard]"
@@ -122,7 +138,7 @@ pytest
 - `src/raam/portfolio.py` — sector-capped selection, Sharpe optimization, sell-to-cash, sizing.
 - `src/raam/strategy.py` — orchestrates the full pipeline, including fee-adjusted final sizing.
 - `src/raam/cli.py` — `raam` command-line entrypoint.
-- `src/raam/history.py` — SQLite persistence for past runs and their positions.
+- `src/raam/history.py` — SQLite persistence for past runs, their positions, and account equity snapshots.
 - `src/raam/history_cli.py` — `raam-history` command-line entrypoint.
 - `src/raam/broker.py` — IBKR paper-trading client, tradability rules, rebalance math.
 - `src/raam/trade_cli.py` — `raam-trade` command-line entrypoint.

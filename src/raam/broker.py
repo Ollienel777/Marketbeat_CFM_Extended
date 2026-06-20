@@ -127,6 +127,40 @@ def get_current_positions(client) -> dict[str, float]:
     }
 
 
+_ACCOUNT_SUMMARY_TAGS = {
+    "NetLiquidation": "net_liquidation",
+    "TotalCashValue": "cash_balance",
+    "GrossPositionValue": "gross_position_value",
+    "UnrealizedPnL": "unrealized_pnl",
+    "RealizedPnL": "realized_pnl",
+}
+
+
+def get_account_summary(client) -> dict:
+    """Reads net liquidation value, cash, and P&L from the connected IBKR account.
+
+    Returns a dict with account_id plus the fields in _ACCOUNT_SUMMARY_TAGS (None for
+    any tag IBKR doesn't report back, e.g. if the account has no positions yet).
+    """
+    summary = client.accountSummary()
+
+    result = {"account_id": None}
+    for field in _ACCOUNT_SUMMARY_TAGS.values():
+        result[field] = None
+
+    for item in summary:
+        if result["account_id"] is None:
+            result["account_id"] = item.account
+        field = _ACCOUNT_SUMMARY_TAGS.get(item.tag)
+        if field is not None:
+            try:
+                result[field] = float(item.value)
+            except ValueError:
+                pass
+
+    return result
+
+
 def submit_orders(client, orders: list[RebalanceOrder]) -> None:
     from ib_async import MarketOrder, Stock
 

@@ -1,15 +1,17 @@
 import argparse
 import sys
+from datetime import datetime
 
 from raam.broker import (
     compute_rebalance_orders,
+    get_account_summary,
     get_current_positions,
     get_trading_client,
     round_to_whole_shares,
     split_tradable,
     submit_orders,
 )
-from raam.history import DEFAULT_DB_PATH, get_run_positions, list_runs
+from raam.history import DEFAULT_DB_PATH, get_run_positions, list_runs, record_account_snapshot
 
 
 def _parse_args(argv):
@@ -19,6 +21,9 @@ def _parse_args(argv):
     parser.add_argument("--db", default=DEFAULT_DB_PATH, help="SQLite history DB path.")
     parser.add_argument("--run-id", type=int, default=None, help="Run to sync to. Defaults to the latest run.")
     parser.add_argument("--execute", action="store_true", help="Actually submit orders. Without this, it's a dry run.")
+    parser.add_argument(
+        "--no-snapshot", action="store_true", help="Skip recording the account's equity/P&L snapshot."
+    )
     return parser.parse_args(argv)
 
 
@@ -65,6 +70,26 @@ def main(argv=None) -> int:
         return 1
 
     try:
+        if not args.no_snapshot:
+            summary = get_account_summary(client)
+            record_account_snapshot(
+                db_path=args.db,
+                snapshot_at=datetime.now().isoformat(timespec="seconds"),
+                account_id=summary["account_id"],
+                net_liquidation=summary["net_liquidation"],
+                cash_balance=summary["cash_balance"],
+                gross_position_value=summary["gross_position_value"],
+                unrealized_pnl=summary["unrealized_pnl"],
+                realized_pnl=summary["realized_pnl"],
+            )
+            if summary["net_liquidation"] is not None:
+                print(
+                    f"Account snapshot: net liquidation ${summary['net_liquidation']:,.2f}, "
+                    f"unrealized P&L ${summary['unrealized_pnl'] or 0:,.2f}, "
+                    f"realized P&L ${summary['realized_pnl'] or 0:,.2f}"
+                )
+            print()
+
         current_positions = get_current_positions(client)
         orders = compute_rebalance_orders(tradable, current_positions)
 

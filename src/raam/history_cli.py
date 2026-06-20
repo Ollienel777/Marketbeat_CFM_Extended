@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from raam.history import DEFAULT_DB_PATH, get_run_positions, get_ticker_history, list_runs
+from raam.history import DEFAULT_DB_PATH, get_run_positions, get_ticker_history, list_account_snapshots, list_runs
 
 
 def _parse_args(argv):
@@ -16,6 +16,8 @@ def _parse_args(argv):
 
     ticker = sub.add_parser("ticker", help="Show a ticker's position across every recorded run.")
     ticker.add_argument("symbol")
+
+    sub.add_parser("pnl", help="Show the IBKR paper account's equity/P&L over time (from raam-trade snapshots).")
 
     return parser.parse_args(argv)
 
@@ -45,6 +47,21 @@ def main(argv=None) -> int:
             print(f"No history found for {args.symbol.upper()}.", file=sys.stderr)
             return 1
         print(history.to_string(index=False))
+        return 0
+
+    if args.command == "pnl":
+        snapshots = list_account_snapshots(args.db)
+        if snapshots.empty:
+            print("No account snapshots recorded yet. Run `raam-trade` (it snapshots automatically).", file=sys.stderr)
+            return 1
+
+        print(snapshots.to_string(index=False))
+
+        first_nl = snapshots["net_liquidation"].dropna()
+        if len(first_nl) >= 2:
+            change = first_nl.iloc[-1] - first_nl.iloc[0]
+            pct = (change / first_nl.iloc[0]) * 100 if first_nl.iloc[0] else 0.0
+            print(f"\nNet change since first snapshot: ${change:,.2f} ({pct:+.2f}%)")
         return 0
 
     return 1

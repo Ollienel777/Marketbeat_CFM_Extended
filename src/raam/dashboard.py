@@ -2,7 +2,7 @@ import streamlit as st
 
 from raam.broker import compute_rebalance_orders, round_to_whole_shares, split_tradable
 from raam.dashboard_data import get_latest_run_id, get_run_overview
-from raam.history import DEFAULT_DB_PATH, get_ticker_history, list_runs
+from raam.history import DEFAULT_DB_PATH, get_ticker_history, list_account_snapshots, list_runs
 
 st.set_page_config(page_title="RAAM Dashboard", layout="wide")
 st.title("RAAM — Ranked Asset Allocation Model")
@@ -69,6 +69,30 @@ if orders:
 if not non_tradable.empty:
     st.caption("Not tradable via IBKR US-equity routing (Canadian/.TO, futures, crypto, or cash):")
     st.dataframe(non_tradable[["Ticker", "Weight"]], use_container_width=True)
+
+st.subheader("Account equity / P&L over time")
+st.caption(
+    "Snapshots of your real IBKR paper account, taken automatically every time `raam-trade` "
+    "connects. This reflects actual fills and price moves, not a theoretical valuation."
+)
+snapshots = list_account_snapshots(db_path)
+if snapshots.empty:
+    st.caption("No snapshots yet -- run `raam-trade` at least once to start tracking this.")
+else:
+    chart_data = snapshots.set_index("snapshot_at")[["net_liquidation"]].dropna()
+    if not chart_data.empty:
+        st.line_chart(chart_data)
+
+    first_nl = snapshots["net_liquidation"].dropna()
+    if len(first_nl) >= 1:
+        latest = first_nl.iloc[-1]
+        change = latest - first_nl.iloc[0]
+        pct = (change / first_nl.iloc[0]) * 100 if first_nl.iloc[0] else 0.0
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Net liquidation", f"${latest:,.2f}")
+        c2.metric("Net change since first snapshot", f"${change:,.2f}", f"{pct:+.2f}%")
+        c3.metric("Snapshots recorded", len(snapshots))
+    st.dataframe(snapshots, use_container_width=True)
 
 st.subheader("Ticker weight history")
 ticker_query = st.text_input("Look up a ticker across all runs", value="")

@@ -1,7 +1,23 @@
+from dataclasses import dataclass
+
 import pandas as pd
 import pytest
 
-from raam.broker import RebalanceOrder, compute_rebalance_orders, is_tradable, round_to_whole_shares, split_tradable
+from raam.broker import (
+    RebalanceOrder,
+    compute_rebalance_orders,
+    get_account_summary,
+    is_tradable,
+    round_to_whole_shares,
+    split_tradable,
+)
+
+
+@dataclass
+class _FakeAccountValue:
+    account: str
+    tag: str
+    value: str
 
 
 @pytest.mark.parametrize("ticker,expected", [
@@ -81,3 +97,48 @@ def test_round_to_whole_shares_drops_orders_under_one_share():
 
     assert [o.ticker for o in rounded] == ["KO"]
     assert rounded[0].qty == 1.0
+
+
+class _FakeAccountClient:
+    def __init__(self, values):
+        self._values = values
+
+    def accountSummary(self):
+        return self._values
+
+
+def test_get_account_summary_parses_known_tags():
+    client = _FakeAccountClient([
+        _FakeAccountValue("DU12345", "NetLiquidation", "1005000.00"),
+        _FakeAccountValue("DU12345", "TotalCashValue", "200000.00"),
+        _FakeAccountValue("DU12345", "GrossPositionValue", "805000.00"),
+        _FakeAccountValue("DU12345", "UnrealizedPnL", "5000.00"),
+        _FakeAccountValue("DU12345", "RealizedPnL", "0.00"),
+        _FakeAccountValue("DU12345", "SomeOtherTag", "ignored"),
+    ])
+
+    summary = get_account_summary(client)
+
+    assert summary["account_id"] == "DU12345"
+    assert summary["net_liquidation"] == 1_005_000.0
+    assert summary["cash_balance"] == 200_000.0
+    assert summary["gross_position_value"] == 805_000.0
+    assert summary["unrealized_pnl"] == 5_000.0
+    assert summary["realized_pnl"] == 0.0
+
+
+def test_get_account_summary_handles_missing_tags():
+    client = _FakeAccountClient([_FakeAccountValue("DU12345", "NetLiquidation", "1000000.00")])
+
+    summary = get_account_summary(client)
+
+    assert summary["account_id"] == "DU12345"
+    assert summary["net_liquidation"] == 1_000_000.0
+    assert summary["cash_balance"] is None
+    assert summary["unrealized_pnl"] is None
+
+
+def test_get_account_summary_empty_client():
+    summary = get_account_summary(_FakeAccountClient([]))
+    assert summary["account_id"] is None
+    assert summary["net_liquidation"] is None

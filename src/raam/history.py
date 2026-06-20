@@ -39,6 +39,17 @@ CREATE TABLE IF NOT EXISTS scored_universe (
     trend REAL,
     score REAL
 );
+
+CREATE TABLE IF NOT EXISTS account_snapshots (
+    snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_at TEXT NOT NULL,
+    account_id TEXT,
+    net_liquidation REAL,
+    cash_balance REAL,
+    gross_position_value REAL,
+    unrealized_pnl REAL,
+    realized_pnl REAL
+);
 """
 
 
@@ -135,6 +146,31 @@ def get_run_scored_universe(db_path: str, run_id: int) -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT * FROM scored_universe WHERE run_id = ? ORDER BY score", conn, params=(run_id,)
         )
+
+
+def record_account_snapshot(
+    db_path: str,
+    snapshot_at: str,
+    account_id: str | None,
+    net_liquidation: float | None,
+    cash_balance: float | None,
+    gross_position_value: float | None,
+    unrealized_pnl: float | None,
+    realized_pnl: float | None,
+) -> int:
+    """Persists one point-in-time read of the broker account's equity/P&L. Returns the snapshot_id."""
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO account_snapshots (snapshot_at, account_id, net_liquidation, cash_balance, "
+            "gross_position_value, unrealized_pnl, realized_pnl) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (snapshot_at, account_id, net_liquidation, cash_balance, gross_position_value, unrealized_pnl, realized_pnl),
+        )
+        return cur.lastrowid
+
+
+def list_account_snapshots(db_path: str) -> pd.DataFrame:
+    with _connect(db_path) as conn:
+        return pd.read_sql_query("SELECT * FROM account_snapshots ORDER BY snapshot_id", conn)
 
 
 def get_ticker_history(db_path: str, ticker: str) -> pd.DataFrame:
