@@ -124,6 +124,37 @@ pip install -e ".[dashboard]"
 raam-dashboard
 ```
 
+## Backtesting
+
+`raam-trade`'s live equity tracking only tells you how the strategy performs *going
+forward* from whenever you started running it. `raam-backtest` answers the more useful
+question up front: walk the strategy backward through history, month by month, using only
+the data that would have been available at each point in time, and see whether it actually
+beat a do-nothing benchmark.
+
+```bash
+raam-backtest --tickers Tickers_file.csv --start 2018-01-01 --end 2024-01-01 --budget 1000000
+```
+
+At each rebalance date (monthly by default; `--freq W` for weekly), it reruns the exact same
+ranking/selection/sizing pipeline used live, but only against price data up to that date --
+no lookahead. It then reuses the same rebalance-diff math `raam-trade` uses against a real
+broker to compute turnover, applies the same per-share fee model, and marks the account to
+market daily. Results are compared against a buy-and-hold benchmark (`--benchmark SPY` by
+default) over the identical window, and the full daily equity curve for both is written to
+`--out` as a CSV.
+
+Known limitations to keep in mind when reading the results:
+- **Survivorship bias**: the ticker list reflects today's universe, not what existed/was
+  liquid at each historical point -- tickers that got delisted along the way never had a
+  chance to be excluded the way a real-time run would have excluded them.
+- **Sector data is current, not historical**: a company's sector classification (used for
+  the sector cap) comes from yfinance's *current* data, applied uniformly across the whole
+  backtest.
+- A clean backtest is still in-sample relative to however the strategy's parameters
+  (lookback windows, weights, caps) were chosen -- it doesn't prove they'll hold up on data
+  they've never been compared against.
+
 ## Test
 
 ```bash
@@ -136,7 +167,8 @@ pytest
 - `src/raam/data.py` — ticker loading, price/metadata download (yfinance), universe filtering.
 - `src/raam/factors.py` — momentum, volatility, correlation, ATR, trend, and the weighted score.
 - `src/raam/portfolio.py` — sector-capped selection, Sharpe optimization, sell-to-cash, sizing.
-- `src/raam/strategy.py` — orchestrates the full pipeline, including fee-adjusted final sizing.
+- `src/raam/strategy.py` — orchestrates the full pipeline (`compute_portfolio` is the data-driven
+  core, reused unchanged by both the live CLI and the backtester).
 - `src/raam/cli.py` — `raam` command-line entrypoint.
 - `src/raam/history.py` — SQLite persistence for past runs, their positions, and account equity snapshots.
 - `src/raam/history_cli.py` — `raam-history` command-line entrypoint.
@@ -145,6 +177,8 @@ pytest
 - `src/raam/dashboard_data.py` — pure helper functions for the dashboard (sector weights, factor stats, weight drift).
 - `src/raam/dashboard.py` — the Streamlit app.
 - `src/raam/dashboard_cli.py` — `raam-dashboard` command-line entrypoint.
+- `src/raam/backtest.py` — walk-forward simulation core, metrics (CAGR/vol/Sharpe/drawdown), benchmark curve.
+- `src/raam/backtest_cli.py` — `raam-backtest` command-line entrypoint.
 - `scripts/register_schedule.ps1` — registers a weekly Windows Task Scheduler job.
 
 ## Bugs fixed vs. the original notebook

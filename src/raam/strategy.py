@@ -7,11 +7,22 @@ from raam.factors import compute_momentum, score_calc
 from raam.portfolio import apply_raam_sell_to_cash, build_portfolio, optimize_sharpe, select_top_stocks
 
 
-def run_raam_simple(ticker_path: str, start: str, end: str, cfg: RaamConfig):
-    """Runs the RAAM pipeline and returns (portfolio, meta_scored, meta_sel) before fee scaling."""
-    tickers = load_ticker_list(ticker_path)
+def compute_portfolio(
+    close: pd.DataFrame,
+    high: pd.DataFrame,
+    low: pd.DataFrame,
+    vol: pd.DataFrame,
+    meta: pd.DataFrame,
+    cfg: RaamConfig,
+    usd_to_cad: float,
+):
+    """Runs the RAAM ranking/selection/sizing pipeline against already-downloaded price
+    data (no network calls). Returns (portfolio, meta_scored, meta_sel) before fee scaling.
 
-    close, high, low, vol, meta = download_all_data(tickers, start, end)
+    close/high/low/vol are assumed already sliced to whatever "as of" date should be
+    visible -- this function never looks beyond the last row it's given, which is what
+    lets the backtester reuse it unchanged at each walk-forward rebalance date.
+    """
     if close.empty or meta.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
@@ -44,7 +55,6 @@ def run_raam_simple(ticker_path: str, start: str, end: str, cfg: RaamConfig):
     weights, cash_w = apply_raam_sell_to_cash(close, meta_sel, weights, cfg.mom_lookback)
 
     weights_nonzero = weights[weights > 0]
-    usd_to_cad = fetch_usd_to_cad(cfg.fallback_usd_to_cad)
     portfolio = build_portfolio(close, weights_nonzero, meta_sel, cfg, usd_to_cad)
 
     if cash_w > 0:
@@ -62,15 +72,24 @@ def run_raam_simple(ticker_path: str, start: str, end: str, cfg: RaamConfig):
     return portfolio, meta_scored, meta_sel
 
 
-def apply_trading_fees(portfolio: pd.DataFrame, cfg: RaamConfig) -> pd.DataFrame:
+def run_raam_simple(ticker_path: str, start: str, end: str, cfg: RaamConfig):
+    """Downloads price data for the ticker list, then runs compute_portfolio against it.
+
+    Returns (portfolio, meta_scored, meta_sel) before fee scaling.
+    """
+    tickers = load_ticker_list(ticker_path)
+    close, high, low, vol, meta = download_all_data(tickers, start, end)
+    usd_to_cad = fetch_usd_to_cad(cfg.fallback_usd_to_cad)
+    return compute_portfolio(close, high, low, vol, meta, cfg, usd_to_cad)
+
+
+def apply_trading_fees(portfolio: pd.DataFrame, cfg: RaamConfig, usd_to_cad: float) -> pd.DataFrame:
     """Scales the portfolio down so its net value (after per-trade fees) matches the budget."""
     if portfolio.empty:
         return portfolio.copy()
 
     fees_usd = np.minimum(2.15, 0.001 * portfolio["Shares"].abs())
     total_fee_usd = fees_usd.sum()
-
-    usd_to_cad = fetch_usd_to_cad(cfg.fallback_usd_to_cad)
     total_fee_cad = total_fee_usd * usd_to_cad
 
     gross_value_cad = portfolio["Value"].sum()
@@ -91,6 +110,10 @@ def run_raam(ticker_path: str, start: str, end: str, cfg: RaamConfig | None = No
     Returns (portfolio_final, meta_scored, meta_sel).
     """
     cfg = cfg or RaamConfig()
-    portfolio, meta_scored, meta_sel = run_raam_simple(ticker_path, start, end, cfg)
-    portfolio_final = apply_trading_fees(portfolio, cfg)
+    tickers = load_ticker_list(ticker_path)
+    close, high, low, vol, meta = download_all_data(tickers, start, end)
+    usd_to_cad = fetch_usd_to_cad(cfg.fallback_usd_to_cad)
+
+    portfolio, meta_scored, meta_sel = compute_portfolio(close, high, low, vol, meta, cfg, usd_to_cad)
+    portfolio_final = apply_trading_fees(portfolio, cfg, usd_to_cad)
     return portfolio_final, meta_scored, meta_sel

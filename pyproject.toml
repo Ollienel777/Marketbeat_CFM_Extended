@@ -24,6 +24,7 @@ raam = "raam.cli:main"
 raam-history = "raam.history_cli:main"
 raam-trade = "raam.trade_cli:main"
 raam-dashboard = "raam.dashboard_cli:main"
+raam-backtest = "raam.backtest_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
