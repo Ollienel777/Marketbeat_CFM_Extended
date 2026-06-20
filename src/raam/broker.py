@@ -88,7 +88,7 @@ def get_trading_client():
     from ib_async import IB
 
     host = os.environ.get("IBKR_HOST", "127.0.0.1")
-    port = int(os.environ.get("IBKR_PORT", "7497"))
+    port = int(os.environ.get("IBKR_PORT", "4002"))
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "1"))
 
     ib = IB()
