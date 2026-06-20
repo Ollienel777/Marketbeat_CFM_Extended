@@ -155,6 +155,28 @@ Known limitations to keep in mind when reading the results:
   (lookback windows, weights, caps) were chosen -- it doesn't prove they'll hold up on data
   they've never been compared against.
 
+### Comparing versions over time
+
+Tag each backtest with `--label` (e.g. when you change a parameter or fix a bug in the
+strategy) and it's recorded to the history DB alongside its metrics and full equity curve:
+
+```bash
+raam-backtest --tickers Tickers_file.csv --start 2018-01-01 --end 2024-01-01 --label "v1-baseline"
+# ...make a change to the strategy...
+raam-backtest --tickers Tickers_file.csv --start 2018-01-01 --end 2024-01-01 --label "v2-ewma-vol"
+```
+
+```bash
+raam-history backtests   # lists every recorded backtest with its summary metrics
+```
+
+The dashboard's **Backtest comparison** view (switch to it via the sidebar) lets you pick
+multiple recorded backtests and overlay their equity curves (normalized to 100 at each
+one's own start, so different date ranges/budgets can still be compared side by side),
+alongside a metrics table (CAGR, vol, Sharpe, max drawdown, % positive months) for each.
+Pass `--no-record` to `raam-backtest` if you're just experimenting and don't want a run
+saved.
+
 ## Test
 
 ```bash
