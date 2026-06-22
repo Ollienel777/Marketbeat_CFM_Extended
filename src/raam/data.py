@@ -27,6 +27,14 @@ def resolve_sector(ticker: str, info_sector: str) -> str:
 
 
 def load_ticker_list(path: str) -> list[str]:
+    if path.strip().upper() == "SP500":
+        from raam.universe import get_sp500_tickers
+
+        tickers, source = get_sp500_tickers()
+        if source == "fallback":
+            print("Warning: live S&P 500 list fetch failed; using the bundled fallback snapshot (may be stale).")
+        return tickers
+
     df = pd.read_csv(path)
     col = df.columns[0]
     vals = df[col].dropna().astype(str).str.upper().str.strip().tolist()

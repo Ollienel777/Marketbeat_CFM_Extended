@@ -24,6 +24,29 @@ Writes a `portfolio_<timestamp>.csv` (selected tickers, shares, weights, value) 
 and records the run (metadata + positions) to a SQLite history DB (default `raam_history.db`).
 Pass `--no-history` to skip recording, or `--history-db <path>` to use a different DB file.
 
+## Ticker universe: static file vs. dynamic S&P 500
+
+`--tickers` accepts either a CSV path (a fixed, manually maintained universe -- good for
+reproducible comparisons between strategy versions, since the universe never silently
+changes) or the special value `SP500`, which pulls the *current* S&P 500 constituent list
+live from Wikipedia at runtime:
+
+```bash
+raam --tickers SP500 --start 2024-10-01 --end 2025-11-21 --out results
+```
+
+This is what you'd want for live/scheduled runs -- the universe always reflects today's
+actual large-cap market rather than a list someone has to remember to update. If the live
+Wikipedia pull fails (site layout change, network issue), it falls back to a bundled
+one-time snapshot (`sp500_fallback.csv`) rather than crashing an unattended weekly job --
+that snapshot is intentionally static and isn't refreshed automatically, so it won't go
+stale in a way that surprises anyone relying on it as a safety net.
+
+Note this doesn't fix survivorship bias for *backtesting* -- pulling today's S&P 500
+membership and testing it against 2018 data still implicitly "knows" which companies
+survived to be in today's index. For reproducible backtest comparisons, prefer a fixed CSV
+(`Tickers_file.csv`, `Tickers_multiasset.csv`) so the universe is identical across runs.
+
 ## History
 
 Inspect recorded runs with the `raam-history` command:
@@ -187,6 +210,7 @@ pytest
 
 - `src/raam/config.py` — strategy parameters (lookback windows, caps, weights).
 - `src/raam/data.py` — ticker loading, price/metadata download (yfinance), universe filtering.
+- `src/raam/universe.py` — live S&P 500 list (Wikipedia) with a static fallback snapshot.
 - `src/raam/factors.py` — momentum, volatility, correlation, ATR, trend, and the weighted score.
 - `src/raam/portfolio.py` — sector-capped selection, Sharpe optimization, sell-to-cash, sizing.
 - `src/raam/strategy.py` — orchestrates the full pipeline (`compute_portfolio` is the data-driven
@@ -213,3 +237,9 @@ pytest
 - `compute_trend_signal` compared today's close against a rolling high/low window that
   included today itself, so the breakout/breakdown signal could structurally never fire.
   Fixed with `shift(1)` so the comparison is against the prior range.
+- `filter_universe` checked `Country.isin(["US", "CA"])`, but yfinance returns full
+  country names for real stocks (e.g. "United States"), not those short codes -- so this
+  filter always emptied out and silently triggered a fallback to an unfiltered universe,
+  meaning liquidity/history filtering never actually ran. It only stayed unnoticed because
+  none of the original blue-chip tickers were ever close to failing those thresholds
+  anyway. Fixed by filtering on `Currency` (reliably "USD"/"CAD") instead.
