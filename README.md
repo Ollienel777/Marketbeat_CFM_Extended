@@ -200,6 +200,31 @@ alongside a metrics table (CAGR, vol, Sharpe, max drawdown, % positive months) f
 Pass `--no-record` to `raam-backtest` if you're just experimenting and don't want a run
 saved.
 
+### Parameter sweeps
+
+Testing one parameter change at a time on one backtest window is a trap: a single window
+can make the same unchanged strategy look great or mediocre depending on which period you
+happened to pick (we hit this directly comparing a 3-year vs. 6-year window). `raam-sweep`
+avoids that by testing every parameter combination across *several* non-overlapping windows
+and ranking by their *average* Sharpe ratio, not by whichever window flatters a combination
+most:
+
+```bash
+raam-sweep --tickers Tickers_file.csv
+```
+
+By default this sweeps `max_stocks` x `max_sector_weight` x `max_stock_weight` (36
+combinations -- how many positions, how concentrated by sector, how concentrated by single
+stock) across 4 built-in windows spanning different regimes (2015-2018 calm bull,
+2018-2020 pre-COVID volatility, 2020-2022 COVID crash/2022 bear, 2022-2024 concentrated
+mega-cap rally). Override windows with repeated `--window start:end`. Each (combination,
+window) pair is recorded as its own labeled backtest, reusing the same history DB and
+dashboard comparison view as `raam-backtest` -- no separate sweep-specific storage or UI.
+
+`--sharpe-trials` defaults to 5000 (vs. 30000 live) since the sweep cares about *relative*
+differences between many combinations, not a perfectly converged optimum for any single one
+-- this keeps total runtime from exploding across 36 combinations x 4 windows.
+
 ## Test
 
 ```bash
@@ -225,6 +250,8 @@ pytest
 - `src/raam/dashboard_cli.py` — `raam-dashboard` command-line entrypoint.
 - `src/raam/backtest.py` — walk-forward simulation core, metrics (CAGR/vol/Sharpe/drawdown), benchmark curve.
 - `src/raam/backtest_cli.py` — `raam-backtest` command-line entrypoint.
+- `src/raam/sweep.py` — parameter grid generation, multi-window backtest sweep, ranked summary.
+- `src/raam/sweep_cli.py` — `raam-sweep` command-line entrypoint.
 - `scripts/register_schedule.ps1` — registers a weekly Windows Task Scheduler job.
 
 ## Bugs fixed vs. the original notebook
