@@ -7,9 +7,9 @@ class RaamConfig:
 
     # universe rules
     min_liq_avg_volume: float = 5_000
-    min_stocks: int = 10
-    max_stocks: int = 25
-    max_sector_weight: float = 0.40
+    min_stocks: int = 5
+    max_stocks: int = 10
+    max_sector_weight: float = 0.25
     max_stock_weight: float = 0.15
 
     # lookback windows
